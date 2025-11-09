@@ -185,51 +185,72 @@ class QLearning:
 
                 if random.random() < epsilon:
                     action = random.choice(possible_actions_list)
-
+                
                 else:
                     final_q = -float("inf")
                     final_a = None
-
+                    
                     for a in possible_actions_list:
-                        q = q_values.get((key, a), 0)
+                        q = q_values.get((key, a), 0.0)
                         
                         if q > final_q:
                             final_q = q
                             final_a = a
+                    action = final_a if final_a is not None else random.choice(possible_actions_list)
 
-                    if final_a is not None:
-                        action = final_a
+                params = actions_config.get(action, {}).get("params", {}).copy() if action in actions_config else {}
+
+                if action not in actions_config and " " in action:
+                    head, tail = action.split(" ", 1)
+
+                    if head in actions_config:
+                        action = head
+                        params = actions_config[head].get("params", {}).copy()
+                        
+                        if params:
+                            k = list(params.keys())[0]
+                            params[k] = tail
+
+                if action in actions_config and params:
+                    
+                    for k, v in params.items():
+                        
+                        if v in (None, "") and " " in action:
+                            params[k] = action.split(" ", 1)[1]
+
+                try:
+                    result = self.helper.execute_action(action, params)
+                    
+                    if isinstance(result, tuple) and len(result) == 2:
+                        success, next_state = result
                     
                     else:
-                        action = random.choice(possible_actions_list)
+                        success, next_state = False, curr_state
+                
+                except Exception:
+                    success, next_state = False, curr_state
 
-                    
-                action_params = actions_config.get(action, {}).get("params", {})
-
-                success, next_state = self.helper.execute_action(action, action_params)
                 reward = self.helper.get_reward(curr_state, action, next_state)
 
                 next_key = json.dumps(next_state, sort_keys=True)
                 next_actions = self.helper.get_all_actions()
                 
                 if next_actions:
-                    max_value = float('-inf')
+                    max_value = float("-inf")
                     
                     for a in next_actions:
-                        value = q_values.get((next_key, a), 0)
+                        value = q_values.get((next_key, a), 0.0)
                         
                         if value > max_value:
                             max_value = value
-
                     max_next = max_value
-
-
+                
                 else:
-                    max_next = 0
+                    max_next = 0.0
 
-                current_q = q_values.get((key, action), 0)
-                final_q = self.get_q_value(self.alpha, self.gamma, reward, current_q, max_next)
-                q_values[(key, action)] = final_q
+                curr_q = q_values.get((key, action), 0.0)
+                new_q = self.get_q_value(self.alpha, self.gamma, reward, curr_q, max_next)
+                q_values[(key, action)] = new_q
 
                 cumulative_reward = self.compute_cumulative_reward(cumulative_reward, self.gamma, step, reward)
                 curr_state = next_state
