@@ -161,6 +161,16 @@ class QLearning:
         for goal in objects['goal'].keys():
             for e in objects['goal'][goal]['load_loc']:
                 place_loc.append(e)
+
+
+        def get_params_change(act):
+            raw = actions_config.get(act, {}).get("params", None)
+            if isinstance(raw, dict):
+                return raw.copy()
+            if isinstance(raw, list):
+                return {raw[0]: None} if raw else {}
+            return {}
+
         
         epsilon = 1.0
         for i in trange(0, episodes, desc="Episode", unit="episode"):
@@ -185,68 +195,71 @@ class QLearning:
 
                 if random.random() < epsilon:
                     action = random.choice(possible_actions_list)
-                
+
                 else:
-                    final_q = -float("inf")
-                    final_a = None
-                    
+                    best_q = float("-inf")
+                    best_a = None
+
                     for a in possible_actions_list:
                         q = q_values.get((key, a), 0.0)
-                        
-                        if q > final_q:
-                            final_q = q
-                            final_a = a
-                    action = final_a if final_a is not None else random.choice(possible_actions_list)
 
-                params = actions_config.get(action, {}).get("params", {}).copy() if action in actions_config else {}
+                        if q > best_q:
+                            best_q = q
+                            best_a = a
+                    action = best_a if best_a is not None else random.choice(possible_actions_list)
 
-                if action not in actions_config and " " in action:
-                    head, tail = action.split(" ", 1)
+
+                original_action = action
+
+                params = get_params_change(action) 
+
+
+                if action not in actions_config and " " in original_action:
+                    head, tail = original_action.split(" ", 1)
 
                     if head in actions_config:
                         action = head
-                        params = actions_config[head].get("params", {}).copy()
-                        
-                        if params:
-                            k = list(params.keys())[0]
-                            params[k] = tail
+                        params = get_params_change(head)
 
-                if action in actions_config and params:
-                    
-                    for k, v in params.items():
-                        
-                        if v in (None, "") and " " in action:
-                            params[k] = action.split(" ", 1)[1]
+                        if isinstance(params, dict) and params:
+                            first_key = next(iter(params.keys()))
+                            params[first_key] = tail
+
+
+                if action in actions_config and isinstance(params, dict) and params:
+
+                    if " " in original_action:
+                        tail = original_action.split(" ", 1)[1]
+
+                        for k, v in list(params.items()):
+
+                            if v in (None, ""):
+                                params[k] = tail
 
                 try:
                     result = self.helper.execute_action(action, params)
-                    
+
                     if isinstance(result, tuple) and len(result) == 2:
                         success, next_state = result
-                    
+
                     else:
                         success, next_state = False, curr_state
-                
+
                 except Exception:
                     success, next_state = False, curr_state
 
                 reward = self.helper.get_reward(curr_state, action, next_state)
 
+
                 next_key = json.dumps(next_state, sort_keys=True)
                 next_actions = self.helper.get_all_actions()
-                
+
                 if next_actions:
-                    max_value = float("-inf")
+                    max_next = max(q_values.get((next_key, a), 0.0) for a in next_actions)
                     
-                    for a in next_actions:
-                        value = q_values.get((next_key, a), 0.0)
-                        
-                        if value > max_value:
-                            max_value = value
-                    max_next = max_value
-                
                 else:
                     max_next = 0.0
+
 
                 curr_q = q_values.get((key, action), 0.0)
                 new_q = self.get_q_value(self.alpha, self.gamma, reward, curr_q, max_next)
@@ -258,6 +271,10 @@ class QLearning:
                 if self.helper.is_terminal_state(curr_state):
                     step = step + 1
                     break
+                    
+                    
+
+
 
                 step = step + 1
 
